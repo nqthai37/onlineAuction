@@ -22,9 +22,10 @@
 
     {{{_sections.css}}}
     
-    <!-- CSS riêng cho Admin nếu đang ở chế độ Admin -->
+    <!-- Unified Sidebar CSS -->
+    <link rel="stylesheet" type="text/css" href="/static/css/sidebar.css">
+
     {{#if isAdminMode}}
-    <link rel="stylesheet" type="text/css" href="/static/css/admin-sidebar.css">
     <style>
         body { background-color: #f4f6f9; }
         .admin-navbar { background-color: #212529; z-index: 1030; }
@@ -40,12 +41,10 @@
     </style>
     {{else if isSellerMode}}
     <link rel="stylesheet" type="text/css" href="/static/css/seller.css">
-    {{else}}
-    <link rel="stylesheet" type="text/css" href="/static/css/client-sidebar.css">
     {{/if}}
 </head>
 
-<body data-bs-spy="scroll" data-bs-target="#navbar" tabindex="0" class="d-flex flex-column min-vh-100">
+<body data-bs-spy="scroll" data-bs-target="#navbar" tabindex="0" class="d-flex flex-column min-vh-100 {{#if isAdminMode}}admin-theme{{/if}}">
 
     {{> svg-icons}}
     
