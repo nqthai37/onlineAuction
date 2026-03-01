@@ -1,8 +1,23 @@
 /* ============================================
-   ADMIN SIDEBAR STYLES
+   SIDEBAR STYLES (Unified)
+   Replaces admin-sidebar.css & client-sidebar.css
    ============================================ */
 
-/* Admin Sidebar Container */
+/* Default theme: Client (#72AEC8) */
+:root {
+  --sidebar-accent: #72AEC8;
+  --sidebar-accent-hover: #5a95b0;
+  --sidebar-accent-rgb: 114, 174, 200;
+}
+
+/* Admin theme overrides (#dc3545) */
+.admin-theme {
+  --sidebar-accent: #dc3545;
+  --sidebar-accent-hover: #c82333;
+  --sidebar-accent-rgb: 220, 53, 69;
+}
+
+/* Sidebar Container */
 .profile-nav {
   position: sticky !important;
   top: 120px !important;
@@ -18,13 +33,13 @@
 
 .profile-nav .list-group-item:hover {
   background-color: #f8f9fa !important;
-  border-left-color: #dc3545 !important;
+  border-left-color: var(--sidebar-accent) !important;
 }
 
 .profile-nav .list-group-item.active {
-  background-color: #dc3545 !important;
+  background-color: var(--sidebar-accent) !important;
   color: white !important;
-  border-left-color: #dc3545 !important;
+  border-left-color: var(--sidebar-accent) !important;
 }
 
 .profile-nav .list-group-item.active i {
@@ -46,12 +61,12 @@
 }
 
 .profile-nav::-webkit-scrollbar-thumb {
-  background: #dc3545;
+  background: var(--sidebar-accent);
   border-radius: 10px;
 }
 
 .profile-nav::-webkit-scrollbar-thumb:hover {
-  background: #c82333;
+  background: var(--sidebar-accent-hover);
 }
 
 /* Card Styles */
@@ -61,6 +76,6 @@
 }
 
 .card.shadow-sm:hover {
-  box-shadow: 0 0.5rem 1rem rgba(220, 53, 69, 0.15) !important;
-  border-color: #dc3545 !important;
+  box-shadow: 0 0.5rem 1rem rgba(var(--sidebar-accent-rgb), 0.15) !important;
+  border-color: var(--sidebar-accent) !important;
 }

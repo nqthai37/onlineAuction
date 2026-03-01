@@ -2,6 +2,9 @@
 
     "use strict";
 
+    // Named constants — replace magic numbers
+    const SEARCH_FOCUS_DELAY_MS = 350;
+
     var searchPopup = function() {
       // open search box
       $('#header-nav').on('click', '.search-button', function(e) {
@@ -17,7 +20,7 @@
           $(".search-popup").addClass("is-visible"),
           setTimeout(function() {
               $(".search-popup").find("#search-popup").focus()
-          }, 350)
+          }, SEARCH_FOCUS_DELAY_MS)
       }),
       $(".search-popup").on("click", function(b) {
           ($(b.target).is(".search-popup-close") || $(b.target).is(".search-popup-close svg") || $(b.target).is(".search-popup-close path") || $(b.target).is(".search-popup")) && (b.preventDefault(),
