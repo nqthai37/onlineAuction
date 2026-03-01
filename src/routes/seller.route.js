@@ -1,10 +1,8 @@
-import express from 'express';
 import * as productModel from '../models/product.model.js';
 import * as reviewModel from '../models/review.model.js';
-import * as productDescUpdateModel from '../models/productDescriptionUpdate.model.js';
-import * as biddingHistoryModel from '../models/biddingHistory.model.js';
-import * as productCommentModel from '../models/productComment.model.js';
-import { sendMail } from '../utils/mailer.js';
+import express from 'express';
+import asyncHandler from '../middlewares/asyncHandler.js';
+import controller from '../controllers/seller.controller.js';
 import multer from 'multer';
 import path from 'path';
 import fs from 'fs';
@@ -214,259 +212,37 @@ router.post('/products/:id/cancel', async function (req, res) {
                 rating: -1,
                 comment: reason || 'Auction cancelled by seller'
             };
-            await reviewModule.createReview(reviewData);
-        }
-        
-        res.json({ success: true, message: 'Auction cancelled successfully' });
-    } catch (error) {
-        console.error('Cancel product error:', error);
-        
-        if (error.message === 'Product not found') {
-            return res.status(404).json({ success: false, message: 'Product not found' });
-        }
-        if (error.message === 'Unauthorized') {
-            return res.status(403).json({ success: false, message: 'Unauthorized' });
-        }
-        
-        res.status(500).json({ success: false, message: 'Server error' });
-    }
-});
+            const router = express.Router();
 
-// Rate Bidder
-router.post('/products/:id/rate', async function (req, res) {
-    try {
-        const productId = req.params.id;
-        const sellerId = req.session.authUser.id;
-        const { rating, comment, highest_bidder_id } = req.body;
-        
-        if (!highest_bidder_id) {
-            return res.status(400).json({ success: false, message: 'No bidder to rate' });
-        }
-        
-        // Map rating: positive -> 1, negative -> -1
-        const ratingValue = rating === 'positive' ? 1 : -1;
-        
-        // Check if already rated
-        const existingReview = await reviewModel.findByReviewerAndProduct(sellerId, productId);
-        
-        if (existingReview) {
-            // Update existing review
-            await reviewModel.updateByReviewerAndProduct(sellerId, productId, {
-                rating: ratingValue,
-                comment: comment || null
+            router.get('/', asyncHandler(controller.dashboard));
+            router.get('/products', asyncHandler(controller.allProducts));
+            router.get('/products/active', asyncHandler(controller.activeProducts));
+            router.get('/products/pending', asyncHandler(controller.pendingProducts));
+            router.get('/products/sold', asyncHandler(controller.soldProducts));
+            router.get('/products/expired', asyncHandler(controller.expiredProducts));
+            router.get('/products/add', asyncHandler(controller.getAdd));
+            router.post('/products/add', asyncHandler(controller.postAdd));
+
+            const storage = multer.diskStorage({
+                destination: function (req, file, cb) { cb(null, 'public/uploads/'); },
+                filename: function (req, file, cb) { const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9); cb(null, uniqueSuffix + '-' + file.originalname); }
             });
-        } else {
-            // Create new review
-            const reviewData = {
-                reviewer_id: sellerId,
-                reviewee_id: highest_bidder_id,
-                product_id: productId,
-                rating: ratingValue,
-                comment: comment || ''
-            };
-            await reviewModel.createReview(reviewData);
-        }
-        
-        res.json({ success: true, message: 'Rating submitted successfully' });
-    } catch (error) {
-        console.error('Rate bidder error:', error);
-        res.status(500).json({ success: false, message: 'Server error' });
-    }
-});
+            const upload = multer({ storage: storage });
 
-// Update Bidder Rating
-router.put('/products/:id/rate', async function (req, res) {
-    try {
-        const productId = req.params.id;
-        const sellerId = req.session.authUser.id;
-        const { rating, comment, highest_bidder_id } = req.body;
-        
-        if (!highest_bidder_id) {
-            return res.status(400).json({ success: false, message: 'No bidder to rate' });
-        }
-        
-        // Map rating: positive -> 1, negative -> -1
-        const ratingValue = rating === 'positive' ? 1 : -1;
-        
-        // Update review
-        await reviewModel.updateReview(sellerId, highest_bidder_id, productId, {
-            rating: ratingValue,
-            comment: comment || ''
-        });
-        
-        res.json({ success: true, message: 'Rating updated successfully' });
-    } catch (error) {
-        console.error('Update rating error:', error);
-        res.status(500).json({ success: false, message: 'Server error' });
-    }
-});
+            router.post('/products/upload-thumbnail', upload.single('thumbnail'), asyncHandler(controller.uploadThumbnail));
+            router.post('/products/upload-subimages', upload.array('images', 10), asyncHandler(controller.uploadSubimages));
 
-// Append Description to Product
-router.post('/products/:id/append-description', async function (req, res) {
-    try {
-        const productId = req.params.id;
-        const sellerId = req.session.authUser.id;
-        const { description } = req.body;
-        
-        if (!description || description.trim() === '') {
-            return res.status(400).json({ success: false, message: 'Description is required' });
+            router.post('/products/:id/cancel', asyncHandler(controller.cancelProduct));
+            router.post('/products/:id/rate', asyncHandler(controller.rateBidder));
+            router.put('/products/:id/rate', asyncHandler(controller.updateRate));
+            router.post('/products/:id/append-description', asyncHandler(controller.appendDescription));
+            router.get('/products/:id/description-updates', asyncHandler(controller.getDescriptionUpdates));
+            router.put('/products/description-updates/:updateId', asyncHandler(controller.updateDescription));
+            router.delete('/products/description-updates/:updateId', asyncHandler(controller.deleteDescription));
         }
-        
-        // Verify that the product belongs to the seller
-        const product = await productModel.findByProductId2(productId, null);
-        if (!product) {
-            return res.status(404).json({ success: false, message: 'Product not found' });
-        }
-        
-        if (product.seller_id !== sellerId) {
-            return res.status(403).json({ success: false, message: 'Unauthorized' });
-        }
-        
-        // Add description update
-        await productDescUpdateModel.addUpdate(productId, description.trim());
-        
-        // Get unique bidders and commenters to notify
-        const [bidders, commenters] = await Promise.all([
-            biddingHistoryModel.getUniqueBidders(productId),
-            productCommentModel.getUniqueCommenters(productId)
-        ]);
-        
-        // Combine and deduplicate by email (exclude seller)
-        const notifyMap = new Map();
-        [...bidders, ...commenters].forEach(user => {
-            if (user.id !== sellerId && !notifyMap.has(user.email)) {
-                notifyMap.set(user.email, user);
-            }
-        });
-        
-        // Send email notifications (non-blocking)
-        const notifyUsers = Array.from(notifyMap.values());
-        if (notifyUsers.length > 0) {
-            const productUrl = `${req.protocol}://${req.get('host')}/products/detail?id=${productId}`;
-            
-            // Send emails in background (don't await)
-            Promise.all(notifyUsers.map(user => {
-                return sendMail({
-                    to: user.email,
-                    subject: `[Auction Update] New description added for "${product.name}"`,
-                    html: `
-                        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-                            <div style="background: linear-gradient(135deg, #72AEC8 0%, #5a9bb8 100%); padding: 20px; text-align: center;">
-                                <h1 style="color: white; margin: 0;">Product Description Updated</h1>
-                            </div>
-                            <div style="padding: 20px; background: #f9f9f9;">
-                                <p>Hello <strong>${user.fullname}</strong>,</p>
-                                <p>The seller has added new information to the product description:</p>
-                                <div style="background: white; padding: 15px; border-left: 4px solid #72AEC8; margin: 15px 0;">
-                                    <h3 style="margin: 0 0 10px 0; color: #333;">${product.name}</h3>
-                                    <p style="margin: 0; color: #666;">Current Price: <strong style="color: #72AEC8;">${new Intl.NumberFormat('en-US').format(product.current_price)} VND</strong></p>
-                                </div>
-                                <div style="background: #fff8e1; padding: 15px; border-radius: 5px; margin: 15px 0;">
-                                    <p style="margin: 0 0 10px 0; font-weight: bold; color: #f57c00;"><i>✉</i> New Description Added:</p>
-                                    <div style="color: #333;">${description.trim()}</div>
-                                </div>
-                                <p>View the product to see the full updated description:</p>
-                                <a href="${productUrl}" style="display: inline-block; background: #72AEC8; color: white; padding: 12px 25px; text-decoration: none; border-radius: 5px; margin: 10px 0;">View Product</a>
-                                <hr style="border: none; border-top: 1px solid #ddd; margin: 20px 0;">
-                                <p style="color: #999; font-size: 12px;">You received this email because you placed a bid or asked a question on this product.</p>
-                            </div>
-                        </div>
-                    `
-                }).catch(err => console.error('Failed to send email to', user.email, err));
-            })).catch(err => console.error('Email notification error:', err));
-        }
-        
-        res.json({ success: true, message: 'Description appended successfully' });
     } catch (error) {
-        console.error('Append description error:', error);
-        res.status(500).json({ success: false, message: 'Server error' });
-    }
-});
-
-// Get Description Updates for a Product
-router.get('/products/:id/description-updates', async function (req, res) {
-    try {
-        const productId = req.params.id;
-        const sellerId = req.session.authUser.id;
-        
-        // Verify that the product belongs to the seller
-        const product = await productModel.findByProductId2(productId, null);
-        if (!product) {
-            return res.status(404).json({ success: false, message: 'Product not found' });
-        }
-        
-        if (product.seller_id !== sellerId) {
-            return res.status(403).json({ success: false, message: 'Unauthorized' });
-        }
-        
-        // Get all description updates for this product
-        const updates = await productDescUpdateModel.findByProductId(productId);
-        
-        res.json({ success: true, updates });
-    } catch (error) {
-        console.error('Get description updates error:', error);
-        res.status(500).json({ success: false, message: 'Server error' });
-    }
-});
-
-// Update a Description Update
-router.put('/products/description-updates/:updateId', async function (req, res) {
-    try {
-        const updateId = req.params.updateId;
-        const sellerId = req.session.authUser.id;
-        const { content } = req.body;
-        
-        if (!content || content.trim() === '') {
-            return res.status(400).json({ success: false, message: 'Content is required' });
-        }
-        
-        // Get the update to verify ownership
-        const update = await productDescUpdateModel.findById(updateId);
-        if (!update) {
-            return res.status(404).json({ success: false, message: 'Update not found' });
-        }
-        
-        // Verify that the product belongs to the seller
-        const product = await productModel.findByProductId2(update.product_id, null);
-        if (!product || product.seller_id !== sellerId) {
-            return res.status(403).json({ success: false, message: 'Unauthorized' });
-        }
-        
-        // Update the content
-        await productDescUpdateModel.updateContent(updateId, content.trim());
-        
-        res.json({ success: true, message: 'Update saved successfully' });
-    } catch (error) {
-        console.error('Update description error:', error);
-        res.status(500).json({ success: false, message: 'Server error' });
-    }
-});
-
-// Delete a Description Update
-router.delete('/products/description-updates/:updateId', async function (req, res) {
-    try {
-        const updateId = req.params.updateId;
-        const sellerId = req.session.authUser.id;
-        
-        // Get the update to verify ownership
-        const update = await productDescUpdateModel.findById(updateId);
-        if (!update) {
-            return res.status(404).json({ success: false, message: 'Update not found' });
-        }
-        
-        // Verify that the product belongs to the seller
-        const product = await productModel.findByProductId2(update.product_id, null);
-        if (!product || product.seller_id !== sellerId) {
-            return res.status(403).json({ success: false, message: 'Unauthorized' });
-        }
-        
-        // Delete the update
-        await productDescUpdateModel.deleteUpdate(updateId);
-        
-        res.json({ success: true, message: 'Update deleted successfully' });
-    } catch (error) {
-        console.error('Delete description error:', error);
-        res.status(500).json({ success: false, message: 'Server error' });
+        console.error('Error cancelling product:', error);
+        return res.status(500).json({ success: false, message: 'Failed to cancel product' });
     }
 });
 
