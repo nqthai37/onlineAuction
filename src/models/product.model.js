@@ -1,4 +1,5 @@
 import db from '../utils/db.js';
+import { applyActiveFilter, maskedBidderName, statusCaseExpression, bidCountExpression } from '../utils/query-helpers.js';
 
 export function findAll() {
   return db('products')
@@ -6,13 +7,7 @@ export function findAll() {
     .leftJoin('users as seller', 'products.seller_id', 'seller.id')
     .select(
       'products.*', 'seller.fullname as seller_name', 'bidder.fullname as highest_bidder_name',
-      db.raw(`
-        (
-          SELECT COUNT(*) 
-          FROM bidding_history 
-          WHERE bidding_history.product_id = products.id
-        ) AS bid_count
-      `)
+      bidCountExpression()
     );
 }
 
@@ -78,7 +73,7 @@ export function findPage(limit, offset) {
     .select(
       'products.*', 
     
-      db.raw(`mask_name_alternating(users.fullname) AS bidder_name`),
+      maskedBidderName('users', 'fullname', 'bidder_name'),
       db.raw(`
         (
           SELECT COUNT(*) 
@@ -106,8 +101,7 @@ export function searchPageByKeywords(keywords, limit, offset, userId, logic = 'o
         .andOnVal('watchlists.user_id', '=', userId || -1);
     })
     // Chỉ hiển thị sản phẩm ACTIVE
-    .where('products.end_at', '>', new Date())
-    .whereNull('products.closed_at')
+    .modify(applyActiveFilter)
     .where((builder) => {
       const words = searchQuery.split(/\s+/).filter(w => w.length > 0);
       if (logic === 'and') {
@@ -134,14 +128,8 @@ export function searchPageByKeywords(keywords, limit, offset, userId, logic = 'o
     .select(
       'products.*',
       'categories.name as category_name',
-      db.raw(`mask_name_alternating(users.fullname) AS bidder_name`),
-      db.raw(`
-        ( 
-          SELECT COUNT(*)
-          FROM bidding_history
-          WHERE bidding_history.product_id = products.id
-        ) AS bid_count
-      `),
+      maskedBidderName('users', 'fullname', 'bidder_name'),
+      bidCountExpression(),
       db.raw('watchlists.product_id IS NOT NULL AS is_favorite')
     );
 
@@ -174,8 +162,7 @@ export function countByKeywords(keywords, logic = 'or') {
     .leftJoin('categories', 'products.category_id', 'categories.id')
     .leftJoin('categories as parent_category', 'categories.parent_id', 'parent_category.id')
     // Chỉ đếm sản phẩm ACTIVE
-    .where('products.end_at', '>', new Date())
-    .whereNull('products.closed_at')
+    .modify(applyActiveFilter)
     .where((builder) => {
       const words = searchQuery.split(/\s+/).filter(w => w.length > 0);
       if (logic === 'and') {
@@ -226,22 +213,15 @@ export function findByCategoryId(categoryId, limit, offset, sort, currentUserId)
 
     .where('products.category_id', categoryId)
     // Chỉ hiển thị sản phẩm ACTIVE (chưa kết thúc, chưa đóng)
-    .where('products.end_at', '>', new Date())
-    .whereNull('products.closed_at')
+    .modify(applyActiveFilter)
     .select(
       'products.*',
       
-      // Logic che tên người đấu giá (giữ nguyên)
-      db.raw(`mask_name_alternating(users.fullname) AS bidder_name`),
+      // Logic che tên người đấu giá (giữ lại)
+      maskedBidderName('users', 'fullname', 'bidder_name'),
 
       // Logic đếm số lượt đấu giá (giữ nguyên)
-      db.raw(`
-        (
-          SELECT COUNT(*) 
-          FROM bidding_history 
-          WHERE bidding_history.product_id = products.id
-        ) AS bid_count
-      `),
+      bidCountExpression(),
 
       // --- ĐOẠN MỚI THÊM VÀO ---
       // Nếu cột product_id bên bảng watchlists có dữ liệu -> Đã like (True), ngược lại là False
@@ -285,18 +265,11 @@ export function findByCategoryIds(categoryIds, limit, offset, sort, currentUserI
     })
     .whereIn('products.category_id', categoryIds)
     // Chỉ hiển thị sản phẩm ACTIVE
-    .where('products.end_at', '>', new Date())
-    .whereNull('products.closed_at')
+    .modify(applyActiveFilter)
     .select(
       'products.*',
-      db.raw(`mask_name_alternating(users.fullname) AS bidder_name`),
-      db.raw(`
-        (
-          SELECT COUNT(*) 
-          FROM bidding_history 
-          WHERE bidding_history.product_id = products.id
-        ) AS bid_count
-      `),
+      maskedBidderName('users', 'fullname', 'bidder_name'),
+      bidCountExpression(),
       db.raw('watchlists.product_id IS NOT NULL AS is_favorite')
     )
     .modify((queryBuilder) => {
@@ -324,8 +297,7 @@ export function countByCategoryIds(categoryIds) {
   return db('products')
     .whereIn('category_id', categoryIds)
     // Chỉ đếm sản phẩm ACTIVE
-    .where('end_at', '>', new Date())
-    .whereNull('closed_at')
+    .modify(applyActiveFilter)
     .count('id as count')
     .first();
 }
@@ -382,13 +354,7 @@ export function findByProductId(productId) {
       'seller.created_at as seller_created_at',
       'categories.name as category_name',
       db.raw(`mask_name_alternating(highest_bidder.fullname) AS bidder_name`),
-      db.raw(`
-        (
-          SELECT COUNT(*) 
-          FROM bidding_history 
-          WHERE bidding_history.product_id = products.id
-        ) AS bid_count
-      `)
+      bidCountExpression()
     )
 }
 
@@ -438,13 +404,7 @@ export async function findByProductId2(productId, userId) {
       'users.email as highest_bidder_email',
       
       // Logic đếm số lượt bid (Giữ nguyên)
-      db.raw(`
-        (
-          SELECT COUNT(*) 
-          FROM bidding_history 
-          WHERE bidding_history.product_id = products.id
-        ) AS bid_count
-      `),
+      bidCountExpression(),
 
       // 4. Logic kiểm tra yêu thích (MỚI THÊM)
       // Nếu cột product_id bên bảng watchlists có dữ liệu -> Đã like (True)
@@ -505,8 +465,7 @@ export function countProductsBySellerId(sellerId) {
 export function countActiveProductsBySellerId(sellerId) {
   return db('products')
     .where('seller_id', sellerId)
-    .where('end_at', '>', new Date())
-    .whereNull('closed_at')
+    .modify(applyActiveFilter)
     .count('id as count')
     .first();
 }
@@ -594,22 +553,8 @@ export function findAllProductsBySellerId(sellerId) {
     .where('seller_id', sellerId)
     .select(
       'products.*', 'categories.name as category_name',
-      db.raw(`
-        (
-          SELECT COUNT(*) 
-          FROM bidding_history 
-          WHERE bidding_history.product_id = products.id
-        ) AS bid_count
-      `),
-      db.raw(`
-        CASE
-          WHEN is_sold IS TRUE THEN 'Sold'
-          WHEN is_sold IS FALSE THEN 'Cancelled'
-          WHEN (end_at <= NOW() OR closed_at IS NOT NULL) AND highest_bidder_id IS NOT NULL AND is_sold IS NULL THEN 'Pending'
-          WHEN end_at <= NOW() AND highest_bidder_id IS NULL THEN 'No Bidders'
-          WHEN end_at > NOW() AND closed_at IS NULL THEN 'Active'
-        END AS status
-      `)
+      bidCountExpression(),
+      statusCaseExpression()
     );
 }
 
@@ -617,17 +562,10 @@ export function findActiveProductsBySellerId(sellerId) {
   return db('products')
     .leftJoin('categories', 'products.category_id', 'categories.id')
     .where('seller_id', sellerId)
-    .where('end_at', '>', new Date())
-    .whereNull('closed_at')
+    .modify(applyActiveFilter)
     .select(
       'products.*', 'categories.name as category_name', 
-      db.raw(`
-        (
-          SELECT COUNT(*) 
-          FROM bidding_history 
-          WHERE bidding_history.product_id = products.id
-        ) AS bid_count
-      `)
+      bidCountExpression()
     );
 }
 
@@ -647,13 +585,7 @@ export function findPendingProductsBySellerId(sellerId) {
       'categories.name as category_name', 
       'users.fullname as highest_bidder_name',
       'users.email as highest_bidder_email',
-      db.raw(`
-        (
-          SELECT COUNT(*) 
-          FROM bidding_history
-          WHERE bidding_history.product_id = products.id
-        ) AS bid_count
-      `)
+      bidCountExpression()
     );
 }
 
@@ -669,13 +601,7 @@ export function findSoldProductsBySellerId(sellerId) {
       'categories.name as category_name',
       'users.fullname as highest_bidder_name',
       'users.email as highest_bidder_email',
-      db.raw(`
-        (
-          SELECT COUNT(*) 
-          FROM bidding_history
-          WHERE bidding_history.product_id = products.id
-        ) AS bid_count
-      `)
+      bidCountExpression()
     );
 }
 
@@ -756,46 +682,6 @@ export async function getPendingProductsStats(sellerId) {
   };
 }
 
-export async function cancelProduct(productId, sellerId) {
-  // Get product to verify seller
-  const product = await db('products')
-    .where('id', productId)
-    .first();
-  
-  if (!product) {
-    throw new Error('Product not found');
-  }
-  
-  if (product.seller_id !== sellerId) {
-    throw new Error('Unauthorized');
-  }
-  
-  // Cancel any active orders for this product
-  const activeOrders = await db('orders')
-    .where('product_id', productId)
-    .whereNotIn('status', ['completed', 'cancelled']);
-  
-  // Cancel all active orders
-  for (let order of activeOrders) {
-    await db('orders')
-      .where('id', order.id)
-      .update({
-        status: 'cancelled',
-        cancelled_by: sellerId,
-        cancellation_reason: 'Seller cancelled the product',
-        cancelled_at: new Date()
-      });
-  }
-  
-  // Update product - mark as cancelled
-  await updateProduct(productId, {
-    is_sold: false,
-    closed_at: new Date()
-  });
-  
-  // Return product data for route to use
-  return product;
-}
 
 /**
  * Lấy các auction vừa kết thúc mà chưa gửi thông báo
@@ -833,4 +719,9 @@ export async function markEndNotificationSent(productId) {
     .update({
       end_notification_sent: new Date()
     });
+}
+
+// simple helper for service layer
+export function getById(productId) {
+  return db('products').where('id', productId).first();
 }

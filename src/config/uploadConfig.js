@@ -9,7 +9,14 @@ const __dirname = path.dirname(__filename);
 // where product images will be stored
 export const uploadDir = path.join(__dirname, '../public/images/products');
 
-// create folder if it doesn't exist, ensures same behaviour previously in index.js
+// helper to ensure upload directory exists (used by index.js startup)
+export function ensureUploadDirExists() {
+  if (!fs.existsSync(uploadDir)) {
+    fs.mkdirSync(uploadDir, { recursive: true });
+  }
+}
+
+// create folder at load time as a fallback if nobody calls the helper
 if (!fs.existsSync(uploadDir)) {
   fs.mkdirSync(uploadDir, { recursive: true });
 }
@@ -26,3 +33,25 @@ export const fileFilter = (req, file, cb) => {
     cb(new Error('Only image files (jpeg, jpg, png, webp) are allowed!'));
   }
 };
+
+
+/**
+ * Lấy đường dẫn thư mục uploads
+ */
+export function getUploadDir() {
+  return path.join(__dirname, 'public', 'images', 'products');
+}
+
+/**
+ * Lấy đường dẫn thư mục payment proofs
+ */
+export function getPaymentProofsDir() {
+  return path.join(__dirname, 'public', 'images', 'payment_proofs');
+}
+
+/**
+ * Lấy đường dẫn thư mục shipping proofs
+ */
+export function getShippingProofsDir() {
+  return path.join(__dirname, 'public', 'images', 'shipping_proofs');
+}

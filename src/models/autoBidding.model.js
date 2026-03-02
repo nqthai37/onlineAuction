@@ -1,4 +1,5 @@
 import db from '../utils/db.js';
+import { applyActiveFilter, statusCaseExpression, bidCountExpression } from '../utils/query-helpers.js';
 
 /**
  * Thêm hoặc cập nhật auto bidding record cho một bidder
@@ -67,8 +68,7 @@ export async function getBiddingProductsByBidderId(bidderId) {
     .join('products', 'auto_bidding.product_id', 'products.id')
     .leftJoin('categories', 'products.category_id', 'categories.id')
     .where('auto_bidding.bidder_id', bidderId)
-    .where('products.end_at', '>', new Date())
-    .whereNull('products.closed_at')
+    .modify(applyActiveFilter)
     .select(
       'products.*',
       'categories.name as category_name',
@@ -79,13 +79,7 @@ export async function getBiddingProductsByBidderId(bidderId) {
           ELSE false 
         END AS is_winning
       `, [bidderId]),
-      db.raw(`
-        (
-          SELECT COUNT(*) 
-          FROM bidding_history 
-          WHERE bidding_history.product_id = products.id
-        ) AS bid_count
-      `)
+      bidCountExpression()
     )
     .orderBy('products.end_at', 'asc');
 }
@@ -116,20 +110,8 @@ export async function getWonAuctionsByBidderId(bidderId) {
       'categories.name as category_name',
       'seller.fullname as seller_name',
       'seller.email as seller_email',
-      db.raw(`
-        CASE
-          WHEN products.is_sold IS TRUE THEN 'Sold'
-          WHEN products.is_sold IS FALSE THEN 'Cancelled'
-          WHEN (products.end_at <= NOW() OR products.closed_at IS NOT NULL) AND products.is_sold IS NULL THEN 'Pending'
-        END AS status
-      `),
-      db.raw(`
-        (
-          SELECT COUNT(*) 
-          FROM bidding_history 
-          WHERE bidding_history.product_id = products.id
-        ) AS bid_count
-      `)
+      statusCaseExpression('products'),
+      bidCountExpression()
     )
     .orderBy('products.end_at', 'desc');
 }

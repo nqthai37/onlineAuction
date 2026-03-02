@@ -1,18 +1,17 @@
 import 'dotenv/config';
 import express from 'express';
 import { engine } from 'express-handlebars';
-import expressHandlebarsSections from 'express-handlebars-sections';
 import session from 'express-session';
 import methodOverride from 'method-override';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import multer from 'multer';
-import { v4 as uuidv4 } from 'uuid';
-import fs from 'fs';
 import passport from './utils/passport.js';
 
 // Import Scheduled Jobs
 import { startAuctionEndNotifier } from './scripts/auctionEndNotifier.js';
+
+// Import Handlebars Helpers (tách riêng)
+import { helpersFunctions } from './utils/handlebars-helpers.js';
 
 // Import Routes
 import homeRouter from './routes/home.route.js';
@@ -24,17 +23,17 @@ import adminAccountRouter from './routes/admin/account.route.js';
 import adminProductRouter from './routes/admin/product.route.js';
 import adminSystemRouter from './routes/admin/system.route.js';
 import sellerRouter from './routes/seller.route.js';
+
 // Import Middlewares
 import { isAuthenticated, isSeller, isAdmin } from './middlewares/auth.mdw.js';
-import * as categoryModel from './models/category.model.js';
-// userModel is no longer needed directly in this file; user session
-// middleware imports it itself when necessary.
+import { userInfoMiddleware } from './middlewares/userInfo.mdw.js';
+import { categoriesMiddleware } from './middlewares/categories.mdw.js';
 
-// helpers, middleware and config have been split into their own modules
-import viewHelpers from './config/viewHelpers.js';
-import userSession from './middlewares/userSession.mdw.js';
-import categoryLoader from './middlewares/categoryLoader.mdw.js';
-import { uploadDir, fileFilter } from './config/uploadConfig.js';
+// Import Upload Config (tách riêng)
+import { ensureUploadDirExists } from './config/uploadConfig.js';
+
+// Import Services
+import { getAllCategories } from './services/category.service.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -65,30 +64,27 @@ app.use(passport.session());
 // ============================================================
 app.engine('handlebars', engine({
   defaultLayout: 'main',
-  helpers: {
-    section: expressHandlebarsSections(),
-    // spread in helpers defined in separate file to keep index.js small
-    ...viewHelpers
-  },
+  helpers: helpersFunctions,
   partialsDir: [
-        path.join(__dirname, 'views/partials'), 
-        path.join(__dirname, 'views/vwAccount') 
-  ]
+    path.join(__dirname, 'views/partials'),
+    path.join(__dirname, 'views/vwAccount'),
+  ],
 }));
 app.set('view engine', 'handlebars');
 app.set('views', './views');
 
-// uploadDir and fileFilter are defined in config/uploadConfig.js
+// Khởi tạo thư mục uploads
+ensureUploadDirExists();
 
 // ============================================================
 // 3. MIDDLEWARE TOÀN CỤC (Chạy cho mọi request)
 // ============================================================
 
-// 3.1. Middleware User Info (moved to middlewares/userSession.mdw.js)
-app.use(userSession);
+// 3.1. Middleware User Info (tách riêng vào userInfo.mdw.js)
+app.use(userInfoMiddleware);
 
-// 3.2. Middleware Category (Chỉ load cho Client) - moved to middlewares/categoryLoader.mdw.js
-app.use(categoryLoader);
+// 3.2. Middleware Category (tách riêng vào categories.mdw.js)
+app.use(categoriesMiddleware);
 
 // ============================================================
 // 4. CẤU HÌNH LOGIC ADMIN (Design Pattern)
@@ -131,7 +127,7 @@ app.use('/seller', isAuthenticated, isSeller, sellerRouter);
 // API endpoint for categories (for search modal)
 app.get('/api/categories', async (req, res) => {
   try {
-    const categories = await categoryModel.findAll();
+    const categories = await getAllCategories();
     // Add level information based on parent_id
     const categoriesWithLevel = categories.map(cat => ({
       ...cat,
